@@ -13,3 +13,106 @@ library(purrr)
 library(leaflet)
 library(jsonlite)
 ```
+```{r}
+raw <- jsonlite::fromJSON("data/wildfires.geojson", simplifyVector = FALSE)
+length(raw$features)
+```
+```{r}
+fires <- tibble(features = raw$features) |>
+  unnest_wider(features) |>
+  unnest_wider(properties) |>
+  unnest_wider(geometry, names_sep = "_") |>
+  select(incident, gis_acres, fire_year, agency, state, geometry_coordinates) |>
+  mutate(
+    gis_acres = as.numeric(gis_acres),
+    fire_year = as.integer(fire_year)
+  )
+
+fires
+```
+```{r}
+fires <- tibble(features = raw$features) |>
+  unnest_wider(features) |>
+  unnest_wider(properties) |>
+  unnest_wider(geometry, names_sep = "_") |>
+  select(incident, gis_acres, fire_year, agency, state, geometry_coordinates) |>
+  mutate(
+    gis_acres = as.numeric(gis_acres),
+    fire_year = as.integer(fire_year)
+  )
+```
+```{r}
+#| cache: true
+fires <- tibble(features = raw$features) |>
+  unnest_wider(features) |>
+  unnest_wider(properties) |>
+  unnest_wider(geometry, names_sep = "_") |>
+  select(incident, gis_acres, fire_year, agency, state, geometry_coordinates) |>
+  mutate(
+    gis_acres = as.numeric(gis_acres),
+    fire_year = as.integer(fire_year)
+  )
+```
+```{r}
+august_fires <- fires |>
+  filter(str_detect(incident, regex("August", ignore_case = TRUE)))
+
+august_fires
+nrow(august_fires)
+
+fires |>
+  slice_max(gis_acres, n = 10, with_ties = FALSE)
+```
+```{r}
+big_fires <- fires |>
+  filter(gis_acres >= 100000) |>
+  mutate(
+    lon = map_dbl(
+      geometry_coordinates,
+      ~ mean(map_dbl(.x[[1]], 1))
+    ),
+    lat = map_dbl(
+      geometry_coordinates,
+      ~ mean(map_dbl(.x[[1]], 2))
+    )
+  )
+
+```{r}
+top_fires <- big_fires |>
+  slice_max(gis_acres, n = 10, with_ties = FALSE) |>
+  mutate(
+    boundary_lon = map(
+      geometry_coordinates, ~ map_dbl(.x[[1]], 1)
+    ),
+    boundary_lat = map(
+      geometry_coordinates, ~ map_dbl(.x[[1]], 2)
+    )
+  )
+
+fire_map <- leaflet() |>
+  addTiles()
+
+for (i in seq_len(nrow(top_fires))) {
+  fire_map <- fire_map |>
+    addPolygons(
+      lng = top_fires$boundary_lon[[i]],
+      lat = top_fires$boundary_lat[[i]],
+      color = "firebrick",
+      weight = 2,
+      fillOpacity = 0.5,
+      popup = paste0(
+        "<b>", top_fires$incident[i], "</b>",
+        "<br>Year: ", top_fires$fire_year[i],
+        "<br>Acres: ", scales::comma(top_fires$gis_acres[i])
+      )
+    )
+}
+
+fire_map |>
+  fitBounds(
+    lng1 = min(unlist(top_fires$boundary_lon)),
+    lat1 = min(unlist(top_fires$boundary_lat)),
+    lng2 = max(unlist(top_fires$boundary_lon)),
+    lat2 = max(unlist(top_fires$boundary_lat))
+  )
+```
